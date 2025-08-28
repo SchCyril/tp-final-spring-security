@@ -19,6 +19,7 @@ public class UserApp {
     @Column(unique = true)
     private String username;
     private String password;
+    private String role;
 
 
     public UserApp(String username, String password) {

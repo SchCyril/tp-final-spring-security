@@ -32,16 +32,19 @@ import java.util.stream.Stream;
 public class JwtService extends OncePerRequestFilter {
     @Value("${jwt.secret}")
     private static String SECRET;
+
     @Value("${jwt.secret}")
     public void setSecret(String secret) {
         SECRET = secret;
     }
 
-    private static String COOKIE_NAME= "";
+    private static String COOKIE_NAME = "";
+
     @Value("${jwt.cookie_name}")
     public void setCookieName(String cookie_name) {
         COOKIE_NAME = cookie_name;
     }
+
     public static final long JWT_TOKEN_VALIDITY = 5 * 60 * 60 * 1000;
 
     @Autowired
@@ -57,21 +60,23 @@ public class JwtService extends OncePerRequestFilter {
             Stream.of(request.getCookies())
                     .filter(cookie ->
                             cookie.getName().equals(COOKIE_NAME))
-                                .map(Cookie::getValue)
+                    .map(Cookie::getValue)
                     .forEach(token -> {
                         try {
 
                             Claims claims = Jwts.parser().setSigningKey(SECRET).parseClaimsJws(token).getBody();
 
                             Optional<UserApp> optUserApp = userAppRepository.findByUsername(claims.getSubject());
-                            if(optUserApp.isEmpty()){
+                            if (optUserApp.isEmpty()) {
                                 throw new UsernameNotFoundException(claims.getSubject());
                             }
                             UserApp userApp = optUserApp.get();
 
                             if (validateToken(token, userApp)) {
+                                String role = claims.get("role", String.class);
                                 UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken = new UsernamePasswordAuthenticationToken(
-                                        userApp, null, null);
+                                        userApp, null,
+                                        Collections.singleton(new SimpleGrantedAuthority("ROLE_" + role)));
                                 SecurityContextHolder.getContext().setAuthentication(usernamePasswordAuthenticationToken);
                             }
                         } catch (Exception e) {
@@ -91,7 +96,7 @@ public class JwtService extends OncePerRequestFilter {
     public static Boolean validateToken(String token, UserApp userApp) {
         try {
             Jwts.parser().setSigningKey(SECRET).parseClaimsJws(token).getBody();
-        }catch (Exception e){
+        } catch (Exception e) {
             return false;
         }
         return true;
@@ -101,17 +106,21 @@ public class JwtService extends OncePerRequestFilter {
     public static String generateToken(UserApp userApp) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("username", userApp.getUsername());
-        return Jwts.builder().setClaims(claims).setSubject(userApp.getUsername()).setIssuedAt(new Date(System.currentTimeMillis()))
+        claims.put("role", userApp.getRole());
+        return Jwts.builder()
+                .setClaims(claims)
+                .setSubject(userApp.getUsername())
+                .setIssuedAt(new Date(System.currentTimeMillis()))
                 .setExpiration(new Date(System.currentTimeMillis() + JWT_TOKEN_VALIDITY))
                 .signWith(SignatureAlgorithm.HS256, SECRET).compact();
     }
 
-    public ResponseCookie createAuthenticationToken(UserApp userApp ) throws Exception {
+    public ResponseCookie createAuthenticationToken(UserApp userApp) throws Exception {
         try {
             final String token = generateToken(userApp);
             return ResponseCookie.from(COOKIE_NAME, token).httpOnly(true)
                     .path("/").build();
-        }catch(DisabledException e) {
+        } catch (DisabledException e) {
             throw new Exception();
         }
 
